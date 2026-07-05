@@ -26,11 +26,32 @@ interface ParsedQuestion {
   correctPct: string
 }
 
+// Labels that stop the explanation and are field names
+const META_FIELD_LABELS = [
+  'subject', 'system', 'topic',
+  'answered correctly', 'correct%', 'correct pct',
+] as const
+// Labels to silently ignore (not stored in DB)
+const IGNORE_LABELS = ['question id', 'difficulty', 'org question id', 'difficulty level']
+
 function parseImportText(raw: string): ParsedQuestion | string {
   const lines = raw.split('\n')
 
-  const optionRegex = /^([A-Fa-f])[.)]\s+(.+)/
-  const labelRegex = /^(answer|explanation|subject|system|topic|correct%|correct pct)[:\s]+(.+)/i
+  // Matches option lines: A. / A) / a. / a) — letter then dot or paren then space
+  const optionRegex = /^([A-Fa-f])[.)\s]\s*(.+)/
+
+  // Matches only known top-level field labels (not "Choice A:", "Choice B:" etc.)
+  const isMetaLabel = (line: string): { key: string; val: string } | null => {
+    const m = line.match(/^([^:]+):\s*(.*)/)
+    if (!m) return null
+    const key = m[1].trim().toLowerCase()
+    const val = m[2].trim()
+    if (key === 'correct answer') return { key: 'correct answer', val }
+    if (key === 'explanation') return { key: 'explanation', val }
+    if (META_FIELD_LABELS.some((f) => key === f)) return { key, val }
+    if (IGNORE_LABELS.some((f) => key === f)) return { key: '__ignore__', val }
+    return null // e.g. "Choice A:" — not a meta label, treat as explanation text
+  }
 
   const statementLines: string[] = []
   const options: { letter: string; text: string }[] = []
@@ -44,59 +65,60 @@ function parseImportText(raw: string): ParsedQuestion | string {
   let phase: 'statement' | 'options' | 'meta' = 'statement'
   let inExplanation = false
 
-  for (const raw of lines) {
-    const line = raw.trim()
+  for (const rawLine of lines) {
+    const line = rawLine.trim()
 
-    // Detect option line (A. / A) / a. etc.)
+    // ── Option line ────────────────────────────────────────────────────────
     const optMatch = line.match(optionRegex)
-    if (optMatch) {
+    if (optMatch && phase !== 'meta') {
       phase = 'options'
       inExplanation = false
       options.push({ letter: optMatch[1].toLowerCase(), text: optMatch[2].trim() })
       continue
     }
 
-    // Detect labelled fields
-    const labelMatch = line.match(labelRegex)
-    if (labelMatch) {
+    // ── Known meta label ───────────────────────────────────────────────────
+    const meta = isMetaLabel(line)
+    if (meta) {
+      if (meta.key === '__ignore__') continue // skip silently
       phase = 'meta'
-      inExplanation = false
-      const key = labelMatch[1].toLowerCase().replace(/\s+/g, '')
-      const val = labelMatch[2].trim()
-      if (key === 'answer') {
-        correctAnswer = val.trim().toLowerCase().charAt(0)
-      } else if (key === 'explanation') {
-        explanationLines.push(val)
+
+      if (meta.key === 'correct answer') {
+        // "Correct Answer: C. Dihydropteridine reductase" → extract letter
+        correctAnswer = meta.val.trim().toLowerCase().charAt(0)
+        inExplanation = false
+      } else if (meta.key === 'explanation') {
         inExplanation = true
-      } else if (key === 'subject') {
-        subject = val
-      } else if (key === 'system') {
-        system = val
-      } else if (key === 'topic') {
-        topic = val
-      } else if (key === 'correct%' || key === 'correctpct') {
-        correctPct = val.replace('%', '').trim()
+        if (meta.val) explanationLines.push(meta.val)
+      } else if (meta.key === 'subject') {
+        subject = meta.val; inExplanation = false
+      } else if (meta.key === 'system') {
+        system = meta.val; inExplanation = false
+      } else if (meta.key === 'topic') {
+        topic = meta.val; inExplanation = false
+      } else if (meta.key === 'answered correctly' || meta.key === 'correct%' || meta.key === 'correct pct') {
+        correctPct = meta.val.replace('%', '').trim(); inExplanation = false
       }
       continue
     }
 
-    // Continuation of explanation (multi-line)
+    // ── Multi-line explanation body (includes "Choice A:" lines) ───────────
     if (inExplanation && phase === 'meta') {
-      explanationLines.push(line)
+      explanationLines.push(rawLine.trimEnd()) // preserve internal spacing
       continue
     }
 
-    // Statement lines
+    // ── Statement ──────────────────────────────────────────────────────────
     if (phase === 'statement') {
-      statementLines.push(line)
+      statementLines.push(rawLine.trimEnd())
     }
   }
 
   const statement = statementLines.join('\n').trim()
   const explanation = explanationLines.join('\n').trim()
 
-  if (!statement) return 'Could not find a question statement. Make sure your text starts with the stem before option A.'
-  if (options.length < 2) return 'Could not find at least 2 options. Make sure options are formatted as "A. text", "B. text", etc.'
+  if (!statement) return 'Could not find a question statement. Make sure the stem comes before the first option (A.).'
+  if (options.length < 2) return 'Could not find at least 2 options. Make sure they are formatted as "A. text", "B. text", etc.'
 
   return {
     statement,
@@ -119,12 +141,15 @@ B. Myocardial infarction
 C. Pulmonary embolism
 D. Pneumothorax
 
-Answer: A
-Explanation: Aortic dissection classically presents with...
+Correct Answer: A. Aortic dissection
+Explanation:
+Aortic dissection classically presents with tearing chest pain...
+Choice A: Correct — aortic dissection...
+Choice B: Myocardial infarction typically presents with...
 Subject: Medicine
 System: Cardiovascular
 Topic: Aortic Dissection
-Correct%: 58`
+Answered Correctly: 58%`
 
 // ── Quick Import Panel ──────────────────────────────────────────────────────
 interface QuickImportProps {
@@ -188,11 +213,12 @@ function QuickImportPanel({ onParsed }: QuickImportProps) {
           {/* Format hint */}
           <div className="mt-3 p-3 rounded-md bg-dm-hover border border-dm-border text-xs text-dm-text2 leading-relaxed">
             <p className="font-medium text-dm-text mb-1.5">Expected format</p>
-            <p>① Start with the <span className="text-dm-accent">question stem</span></p>
-            <p>② Options as <span className="text-dm-accent">A. text</span>, <span className="text-dm-accent">B. text</span> … (supports A–F, dots or brackets)</p>
-            <p>③ <span className="text-dm-accent">Answer: B</span> — the correct option letter</p>
-            <p>④ <span className="text-dm-accent">Explanation: …</span> — can span multiple lines</p>
-            <p>⑤ Optional: <span className="text-dm-accent">Subject:</span> <span className="text-dm-accent">System:</span> <span className="text-dm-accent">Topic:</span> <span className="text-dm-accent">Correct%:</span></p>
+            <p>① <span className="text-dm-accent">Question stem</span> — plain text before the first option</p>
+            <p>② Options as <span className="text-dm-accent">A. text</span> … <span className="text-dm-accent">E. text</span> (A–F supported)</p>
+            <p>③ <span className="text-dm-accent">Correct Answer: C. text</span> — letter is extracted automatically</p>
+            <p>④ <span className="text-dm-accent">Explanation:</span> multi-line — "Choice A/B/…:" lines are kept as part of it</p>
+            <p>⑤ <span className="text-dm-accent">Subject:</span> <span className="text-dm-accent">System:</span> <span className="text-dm-accent">Topic:</span> <span className="text-dm-accent">Answered Correctly: 33%</span></p>
+            <p className="text-dm-placeholder">Question ID, Difficulty, Org Question ID — ignored automatically</p>
           </div>
 
           {error && (
