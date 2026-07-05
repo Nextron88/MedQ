@@ -1,21 +1,13 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { type ReactNode } from 'react'
 import { Navigate } from 'react-router-dom'
-import { getSession } from '../lib/auth'
+import { useAuth } from '../lib/AuthContext'
 
 interface Props {
   children: ReactNode
 }
 
 export default function ProtectedRoute({ children }: Props) {
-  const [loading, setLoading] = useState(true)
-  const [authenticated, setAuthenticated] = useState(false)
-
-  useEffect(() => {
-    getSession().then((session) => {
-      setAuthenticated(!!session)
-      setLoading(false)
-    })
-  }, [])
+  const { session, loading } = useAuth()
 
   if (loading) {
     return (
@@ -25,5 +17,10 @@ export default function ProtectedRoute({ children }: Props) {
     )
   }
 
-  return authenticated ? <>{children}</> : <Navigate to="/login" replace />
+  // No valid session → send to login, no exceptions
+  if (!session) {
+    return <Navigate to="/login" replace />
+  }
+
+  return <>{children}</>
 }
