@@ -45,12 +45,44 @@ function ConfirmDeleteModal({ questionId, onCancel, onConfirmed }: ConfirmDelete
   const handleDelete = async () => {
     setDeleting(true)
     setError(null)
-    const { error } = await supabase.from('questions').delete().eq('id', questionId)
-    if (error) {
-      setError(error.message)
+
+    // 1. Fetch storage paths of all images belonging to this question
+    const { data: imageRows, error: fetchErr } = await supabase
+      .from('question_images')
+      .select('storage_path')
+      .eq('question_id', questionId)
+
+    if (fetchErr) {
+      setError(fetchErr.message)
       setDeleting(false)
       return
     }
+
+    // 2. Delete the actual files from storage (if any)
+    if (imageRows && imageRows.length > 0) {
+      const paths = imageRows.map((r) => r.storage_path)
+      const { error: storageErr } = await supabase.storage
+        .from(IMAGE_BUCKET)
+        .remove(paths)
+      if (storageErr) {
+        setError(`Storage cleanup failed: ${storageErr.message}`)
+        setDeleting(false)
+        return
+      }
+    }
+
+    // 3. Delete the question row (cascades question_images + question_videos rows)
+    const { error: deleteErr } = await supabase
+      .from('questions')
+      .delete()
+      .eq('id', questionId)
+
+    if (deleteErr) {
+      setError(deleteErr.message)
+      setDeleting(false)
+      return
+    }
+
     onConfirmed()
   }
 
