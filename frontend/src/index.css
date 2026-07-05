@@ -1,0 +1,73 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    @apply bg-dm-bg text-dm-text font-sans antialiased;
+  }
+}
+
+@layer components {
+  /* ── Inputs ─────────────────────────────────────────── */
+  .input {
+    @apply w-full px-3 py-2 text-sm border border-dm-border2 rounded-md bg-dm-input
+           text-dm-text
+           focus:outline-none focus:border-dm-accent
+           disabled:opacity-40 disabled:cursor-not-allowed
+           transition-colors duration-150;
+    color-scheme: dark;
+  }
+
+  .input::placeholder {
+    color: #555555;
+  }
+
+  /* ── Buttons ─────────────────────────────────────────── */
+  .btn-primary {
+    @apply inline-flex items-center justify-center px-4 py-2 text-sm font-medium
+           bg-dm-accent text-white rounded-md
+           hover:bg-dm-accent-hover
+           focus:outline-none focus:ring-1 focus:ring-dm-accent focus:ring-offset-1 focus:ring-offset-dm-bg
+           disabled:opacity-50 disabled:cursor-not-allowed
+           transition-colors duration-150;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center px-4 py-2 text-sm font-medium
+           bg-transparent text-dm-text2 border border-dm-border2 rounded-md
+           hover:bg-dm-hover hover:text-dm-text
+           focus:outline-none focus:ring-1 focus:ring-dm-accent focus:ring-offset-1 focus:ring-offset-dm-bg
+           disabled:opacity-50 disabled:cursor-not-allowed
+           transition-colors duration-150;
+  }
+
+  .btn-danger {
+    @apply inline-flex items-center justify-center px-3 py-1.5 text-sm font-medium
+           text-red-400 border border-red-900/50 rounded-md bg-transparent
+           hover:bg-red-900/20 hover:border-red-800/60
+           focus:outline-none
+           transition-colors duration-150;
+  }
+
+  /* ── Cards ───────────────────────────────────────────── */
+  .card {
+    @apply bg-dm-card border border-dm-border rounded-md;
+  }
+
+  /* ── Form labels ─────────────────────────────────────── */
+  .label {
+    @apply block text-xs font-medium text-dm-text2 mb-1.5;
+  }
+
+  /* ── Section headings inside cards ───────────────────── */
+  .section-title {
+    @apply text-xs font-medium uppercase tracking-widest text-dm-text2 mb-3;
+  }
+}
